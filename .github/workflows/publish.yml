@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - package.json
+  workflow_dispatch:
 
 jobs:
   publish:
@@ -17,7 +18,7 @@ jobs:
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
-      - run: npm ci
+      - run: npm install
       - run: npm test
       - run: npm run typecheck
       - name: Publish if version is new

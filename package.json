@@ -1,6 +1,6 @@
 {
   "name": "@alhassanaraouf/paseo-remote-editor",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Composer pill to open a workspace in VS Code or Zed over SSH, desktop only.",
   "author": "Al-Hassan Abdel-Raouf",
   "license": "MIT",

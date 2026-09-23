@@ -210,14 +210,15 @@ export default function contribute(client: PluginClientContext) {
   }
 
   // ----- Command Center -----
-  // One remover per editor id, covering both its workspace- and agent-context
-  // items. Reconciled against the custom editor list so items appear and
-  // disappear live as the user edits them in settings, without a plugin reload.
+  // Workspace context also matches when an agent tab is focused (the agent
+  // still belongs to a workspace), so a single workspace-context item per
+  // editor is enough; adding an agent-context twin would show every item
+  // twice while an agent is focused.
   const editorCommandItems = new Map<string, () => void>();
 
   function addEditorCommandItem(id: string, label: string, editorId?: string): () => void {
-    const workspaceItem = client.addCommandCenterItem({
-      id: `${id}-workspace`,
+    return client.addCommandCenterItem({
+      id,
       title: label,
       icon: "Code",
       context: "workspace",
@@ -225,19 +226,6 @@ export default function contribute(client: PluginClientContext) {
         await openInEditor(workspace.directory, editorId);
       },
     });
-    const agentItem = client.addCommandCenterItem({
-      id: `${id}-agent`,
-      title: label,
-      icon: "Code",
-      context: "agent",
-      async onSelect({ agent }) {
-        await openInEditor(agent.cwd, editorId);
-      },
-    });
-    return () => {
-      void workspaceItem();
-      void agentItem();
-    };
   }
 
   function applyEditorCommandItems(customEditors: Parameters<typeof allEditors>[0]): void {
@@ -255,7 +243,7 @@ export default function contribute(client: PluginClientContext) {
     }
   }
 
-  const removeDefaultEditorItem = addEditorCommandItem("open-in-editor", "Open in editor");
+  const removeDefaultEditorItem = addEditorCommandItem("open-in-default-editor", "Open in default editor");
   applyEditorCommandItems(getCustomEditors());
   const unsubscribeCustomEditors = subscribeCustomEditors((customEditors) => {
     if (disposed) return;

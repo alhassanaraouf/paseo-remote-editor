@@ -4,6 +4,7 @@ import { buildEditorUri, type EditorValues } from "./client/buildEditorUri";
 import { EditorPillContent } from "./client/EditorPillContent";
 import { EditorSettingsScreen } from "./client/EditorSettingsScreen";
 import { allEditors } from "./client/editors";
+import { getCustomEditors, subscribeCustomEditors } from "./client/editorsStore";
 import { openEditorUri } from "./client/openEditorUri";
 import { setPlacement, subscribePlacement } from "./client/placementStore";
 import { machineInfoRpc } from "./shared/machine";
@@ -85,7 +86,7 @@ export default function contribute(client: PluginClientContext) {
           // fallen out of the current list.
           const directory = lastWorkspaces.find((w) => w.id === workspaceId)?.directory ?? capturedDirectory;
           try {
-            await openWorkspaceEditor(directory);
+            await openInEditor(directory);
           } catch (error: unknown) {
             // openWorkspaceEditor handles recoverable errors; this catches
             // truly unexpected throws so the action never surfaces to Paseo.
@@ -179,7 +180,9 @@ export default function contribute(client: PluginClientContext) {
       });
   }
 
-  async function openWorkspaceEditor(directory: string): Promise<void> {
+  // editorId picks a specific editor (Command Center per-editor items); omitted, it
+  // falls back to the user's configured default (header button, default item).
+  async function openInEditor(directory: string, editorId?: string): Promise<void> {
     let values: EditorValues;
     let machine: { username: string; hostname: string };
     try {
@@ -187,24 +190,86 @@ export default function contribute(client: PluginClientContext) {
       values = result[0];
       machine = result[1];
     } catch (error: unknown) {
-      console.warn("[remote-editor] header button could not read preferences or machine info:", error);
+      console.warn("[remote-editor] could not read preferences or machine info:", error);
       client.openSettings("editors");
       return;
     }
     const editors = allEditors(values.customEditors);
-    const defaultEditor = editors.find((editor) => editor.id === values.defaultEditorId) ?? editors[0];
-    if (!defaultEditor) {
+    const editor = editors.find((candidate) => candidate.id === (editorId ?? values.defaultEditorId)) ?? editors[0];
+    if (!editor) {
       client.openSettings("editors");
       return;
     }
-    const uri = buildEditorUri(defaultEditor, values, machine, directory);
+    const uri = buildEditorUri(editor, values, machine, directory);
     try {
       await openEditorUri(uri);
     } catch (error: unknown) {
-      console.warn("[remote-editor] header button could not open editor:", error);
+      console.warn("[remote-editor] could not open editor:", error);
       client.openSettings("editors");
     }
   }
+
+  // ----- Command Center -----
+  // One remover per editor id, covering both its workspace- and agent-context
+  // items. Reconciled against the custom editor list so items appear and
+  // disappear live as the user edits them in settings, without a plugin reload.
+  const editorCommandItems = new Map<string, () => void>();
+
+  function addEditorCommandItem(id: string, label: string, editorId?: string): () => void {
+    const workspaceItem = client.addCommandCenterItem({
+      id: `${id}-workspace`,
+      title: label,
+      icon: "Code",
+      context: "workspace",
+      async onSelect({ workspace }) {
+        await openInEditor(workspace.directory, editorId);
+      },
+    });
+    const agentItem = client.addCommandCenterItem({
+      id: `${id}-agent`,
+      title: label,
+      icon: "Code",
+      context: "agent",
+      async onSelect({ agent }) {
+        await openInEditor(agent.cwd, editorId);
+      },
+    });
+    return () => {
+      void workspaceItem();
+      void agentItem();
+    };
+  }
+
+  function applyEditorCommandItems(customEditors: Parameters<typeof allEditors>[0]): void {
+    const editors = allEditors(customEditors);
+    const present = new Set(editors.map((editor) => editor.id));
+    for (const editor of editors) {
+      if (editorCommandItems.has(editor.id)) continue;
+      editorCommandItems.set(editor.id, addEditorCommandItem(`open-in-${editor.id}`, `Open in ${editor.label}`, editor.id));
+    }
+    for (const [id, remove] of [...editorCommandItems]) {
+      if (!present.has(id)) {
+        remove();
+        editorCommandItems.delete(id);
+      }
+    }
+  }
+
+  const removeDefaultEditorItem = addEditorCommandItem("open-in-editor", "Open in editor");
+  applyEditorCommandItems(getCustomEditors());
+  const unsubscribeCustomEditors = subscribeCustomEditors((customEditors) => {
+    if (disposed) return;
+    applyEditorCommandItems(customEditors);
+  });
+  void client
+    .rpc(preferencesRpc, {})
+    .then((result) => {
+      if (disposed) return;
+      applyEditorCommandItems(result.customEditors);
+    })
+    .catch((error: unknown) => {
+      console.warn("[remote-editor] failed to read editor preferences:", error);
+    });
 
   const unsubscribePlacement = subscribePlacement((value) => {
     if (disposed) return;
@@ -321,6 +386,7 @@ export default function contribute(client: PluginClientContext) {
     unsubscribeWorkspaceObserver?.();
     unsubscribeWorkspaceObserver = null;
     unsubscribePlacement();
+    unsubscribeCustomEditors();
     void agentSubscription?.release();
     agentSubscription = null;
     void workspaceSubscription?.release();
@@ -330,6 +396,9 @@ export default function contribute(client: PluginClientContext) {
     pills.clear();
     for (const remove of headerButtons.values()) remove();
     headerButtons.clear();
+    removeDefaultEditorItem();
+    for (const remove of editorCommandItems.values()) remove();
+    editorCommandItems.clear();
     removeSettingsScreen();
   };
 }

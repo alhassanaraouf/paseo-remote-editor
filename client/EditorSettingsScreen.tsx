@@ -13,6 +13,7 @@ import { useState } from "react";
 import { Text } from "react-native";
 import { editorPreferences, type Placement, placementSchema } from "../shared/settings";
 import { setPlacement } from "./placementStore";
+import { setCustomEditors } from "./editorsStore";
 import { allEditors } from "./editors";
 import type { z } from "zod";
 
@@ -101,11 +102,10 @@ export function EditorSettingsScreen({ theme }: PluginSurfaceProps) {
       setError("An editor with this id already exists.");
       return;
     }
-    const ok = await save(
-      { ...values, customEditors: [...values.customEditors, { id, label, uriTemplate }] },
-      revision,
-    );
+    const customEditors = [...values.customEditors, { id, label, uriTemplate }];
+    const ok = await save({ ...values, customEditors }, revision);
     if (ok) {
+      setCustomEditors(customEditors);
       setDraftId("");
       setDraftLabel("");
       setDraftTemplate("");
@@ -117,7 +117,8 @@ export function EditorSettingsScreen({ theme }: PluginSurfaceProps) {
   async function removeCustomEditor(id: string) {
     const customEditors = values.customEditors.filter((editor) => editor.id !== id);
     const defaultEditorId = values.defaultEditorId === id ? "vscode" : values.defaultEditorId;
-    await save({ ...values, customEditors, defaultEditorId }, revision);
+    const ok = await save({ ...values, customEditors, defaultEditorId }, revision);
+    if (ok) setCustomEditors(customEditors);
   }
 
   return (

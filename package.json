@@ -24,7 +24,7 @@
     "shared/"
   ],
   "scripts": {
-    "test": "node --import tsx --test tests/",
+    "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

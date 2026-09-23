@@ -11,11 +11,18 @@ import {
 } from "@getpaseo/plugin/client/ui";
 import { useState } from "react";
 import { Text } from "react-native";
-import { editorPreferences } from "../shared/settings";
+import { editorPreferences, type Placement, placementSchema } from "../shared/settings";
+import { setPlacement } from "./placementStore";
 import { allEditors } from "./editors";
 import type { z } from "zod";
 
 type Values = z.output<(typeof editorPreferences)["schema"]>;
+
+const PLACEMENT_OPTIONS: readonly { label: string; value: Placement }[] = [
+  { label: "Composer", value: "composer" },
+  { label: "Workspace header", value: "header" },
+  { label: "Both", value: "both" },
+];
 
 function ConnectionSection({ values, revision, save }: { values: Values; revision: string; save: (v: Values, r: string) => Promise<boolean> }) {
   const [sshHost, setSshHost] = useState(values.sshHost);
@@ -122,6 +129,17 @@ export function EditorSettingsScreen({ theme }: PluginSurfaceProps) {
             value={values.defaultEditorId}
             options={editors.map((editor) => ({ label: editor.label, value: editor.id }))}
             onValueChange={(defaultEditorId) => save({ ...values, defaultEditorId }, revision)}
+          />
+          <SettingsSelect
+            label="Show button in"
+            hint="Composer adds a pill to each agent's composer and opens the agent's working directory. Workspace header adds one button per workspace and opens the workspace folder."
+            value={values.placement}
+            options={PLACEMENT_OPTIONS}
+            onValueChange={async (placement) => {
+              const parsed = placementSchema.parse(placement);
+              const ok = await save({ ...values, placement: parsed }, revision);
+              if (ok) setPlacement(parsed);
+            }}
           />
         </SettingsCard>
       </SettingsSection>

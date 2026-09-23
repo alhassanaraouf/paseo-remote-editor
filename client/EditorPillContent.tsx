@@ -1,17 +1,23 @@
 import type { PluginButtonContentProps } from "@getpaseo/plugin/client";
-import { useAgent, useRpc, useSettings } from "@getpaseo/plugin/client";
+import { useAgent, useRpc, useSettings, useWorkspace } from "@getpaseo/plugin/client";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 import { Pressable, Text, View } from "react-native";
 import { editorPreferences } from "../shared/settings";
 import { machineInfoRpc } from "../shared/machine";
-import { allEditors, resolveSshTarget, type Editor } from "./editors";
+import { buildEditorUri } from "./buildEditorUri";
+import { allEditors, type Editor } from "./editors";
 import { openEditorUri } from "./openEditorUri";
 
 export function EditorPillContent(props: PluginButtonContentProps) {
   const { theme, close } = props;
-  const agentId = props.context === "agent" ? props.agentId : undefined;
-  const cwd = useAgent(agentId ?? "", (agent) => agent.cwd);
+  // The header button only carries workspaceId; the composer pill also carries agentId.
+  // Hooks must run unconditionally, so call both with an empty id when not applicable.
+  const agentId = props.context === "agent" ? props.agentId : "";
+  const workspaceId = props.workspaceId;
+  const cwdAgent = useAgent(agentId, (agent) => agent.cwd);
+  const cwdWorkspace = useWorkspace(workspaceId, (workspace) => workspace.directory);
+  const cwd = props.context === "agent" ? cwdAgent : cwdWorkspace;
   const getMachineInfo = useRpc(machineInfoRpc);
   const machine = useQuery({ queryKey: ["machine.info"], queryFn: () => getMachineInfo({}) });
   const settings = useSettings(editorPreferences);
@@ -36,16 +42,7 @@ export function EditorPillContent(props: PluginButtonContentProps) {
 
   async function openIn(editor: Editor) {
     if (!cwd || !machine.data || !values) return;
-    const uri = values.preferLocal
-      ? editor.buildLocal(cwd)
-      : editor.buildRemote(
-          resolveSshTarget(machine.data, {
-            sshHost: values.sshHost,
-            sshUser: values.sshUser,
-            sshPort: values.sshPort,
-          }),
-          cwd,
-        );
+    const uri = buildEditorUri(editor, values, machine.data, cwd);
     await openEditorUri(uri);
     close();
   }

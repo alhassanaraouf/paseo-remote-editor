@@ -11,10 +11,13 @@ export const customEditorSchema = z.object({
 });
 export type CustomEditor = z.infer<typeof customEditorSchema>;
 
+export const placementSchema = z.enum(["composer", "header", "both"]);
+export type Placement = z.infer<typeof placementSchema>;
+
 export const editorPreferences = defineSettings({
   id: "editors",
   scope: "host",
-  version: 2,
+  version: 3,
   schema: z.object({
     defaultEditorId: z.string().default("vscode"),
     customEditors: z.array(customEditorSchema).default([]),
@@ -29,11 +32,19 @@ export const editorPreferences = defineSettings({
     // When the daemon runs on the same machine as the client, skip SSH and
     // open the local path directly.
     preferLocal: z.boolean().default(false),
+    // Where to surface the "Open in editor" affordance. "composer" keeps the
+    // original behaviour and is the default for existing users.
+    placement: placementSchema.default("composer"),
   }),
   migrate: (values, fromVersion) => {
-    if (fromVersion < 2 && values && typeof values === "object") {
-      return { sshHost: "", sshUser: "", sshPort: 22, preferLocal: false, ...values };
+    let next: Record<string, unknown> & { placement?: Placement } =
+      values && typeof values === "object" ? { ...values } : {};
+    if (fromVersion < 2) {
+      next = { sshHost: "", sshUser: "", sshPort: 22, preferLocal: false, ...next };
     }
-    return values;
+    if (fromVersion < 3) {
+      next.placement ??= "composer";
+    }
+    return next;
   },
 });
